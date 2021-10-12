@@ -1,3 +1,5 @@
+use fastrand;
+
 mod display;
 use display::Display;
 
@@ -189,8 +191,7 @@ impl Chip8 {
                 self.pc = jump_register + nnn;
             }
             (0xC, _x, _, _) => {
-                // TODO
-                self.v[x] = 0;
+                self.v[x] = fastrand::u8(..) & kk;
             }
             (0xD, _, _, _) => {
                 let mut width = 8;
