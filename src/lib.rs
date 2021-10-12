@@ -10,6 +10,7 @@ pub struct Chip8 {
     pub memory: [u8; 65536],
     pub i: u16,
     pub v: [u8; 16],
+    pub flags: [u8; 16],
     pub delay: u8,
     pub sound: u8,
     pub display: Display,
@@ -59,6 +60,7 @@ impl Chip8 {
             memory,
             i: 0,
             v: [0; 16],
+            flags: [0; 16],
             delay: 0,
             sound: 0,
             display: Display::new(),
@@ -238,7 +240,7 @@ impl Chip8 {
                 }
             }
             (0xF, 0x0, 0x0, 0x0) => self.i = self.fetch(),
-            (0xF, 0x0, 0x0, 0x2) => (),
+            (0xF, 0x0, 0x0, 0x2) => (), // TODO
             (0xF, _, 0x0, 0x7) => self.v[x] = self.delay,
             (0xF, _x, 0x0, 0xA) => {
                 // TODO
@@ -253,7 +255,7 @@ impl Chip8 {
                 }
             }
             (0xF, _, 0x0, 0x1) => self.display.plane(n),
-            (0xF, _n, 0x3, 0xA) => (),
+            (0xF, _n, 0x3, 0xA) => (), // TODO
             (0xF, _, 0x1, 0x5) => self.delay = vx,
             (0xF, _, 0x1, 0x8) => self.sound = vx,
             (0xF, _, 0x1, 0xE) => self.i = self.i.wrapping_add(vx as u16),
@@ -285,8 +287,16 @@ impl Chip8 {
                     self.i = i
                 }
             }
-            (0xF, _x, 0x7, 0x5) => (),
-            (0xF, _x, 0x8, 0x5) => (),
+            (0xF, _x, 0x7, 0x5) => {
+                for n in 0..=x {
+                    self.flags[n] = self.v[n];
+                }
+            }
+            (0xF, _x, 0x8, 0x5) => {
+                for n in 0..=x {
+                    self.v[n] = self.flags[n];
+                }
+            }
             _ => return Err(format!("Unknown opcode {:#06x}", opcode)),
         }
         Ok(())
