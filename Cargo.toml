@@ -1,9 +1,10 @@
 [package]
 name = "deca"
-version = "0.0.1"
+version = "0.0.4"
 edition = "2018"
 license = "MIT"
 description = "CHIP-8 interpreter backend"
+repository = "https://github.com/tobiasvl/deca"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
