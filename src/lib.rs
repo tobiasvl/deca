@@ -113,18 +113,18 @@ impl Chip8 {
                 self.pc = nnn;
             }
             (0x3, _, _, _) => {
-                if vx == kk && self.fetch() == 0xF000 {
-                    let _ = self.fetch();
+                if vx == kk {
+                    self.skip()
                 }
             }
             (0x4, _, _, _) => {
-                if vx != kk && self.fetch() == 0xF000 {
-                    let _ = self.fetch();
+                if vx != kk {
+                    self.skip()
                 }
             }
             (0x5, _, _, 0x0) => {
-                if vx == vy && self.fetch() == 0xF000 {
-                    let _ = self.fetch();
+                if vx == vy {
+                    self.skip()
                 }
             }
             (0x5, _, _, 0x2) => {
@@ -181,8 +181,8 @@ impl Chip8 {
                 self.v[x] = operand << 1
             }
             (0x9, _, _, 0x0) => {
-                if vx != vy && self.fetch() == 0xF000 {
-                    let _ = self.fetch();
+                if vx != vy {
+                    self.skip()
                 }
             }
             (0xA, _, _, _) => self.i = nnn,
@@ -228,13 +228,13 @@ impl Chip8 {
                 self.v[0xF] = self.display.draw(sprite, vx, vy)
             }
             (0xE, _x, 0x9, 0xE) => {
-                if self.keyboard[vx as usize] && self.fetch() == 0xF000 {
-                    let _ = self.fetch();
+                if self.keyboard[vx as usize] {
+                    self.skip()
                 }
             }
             (0xE, _x, 0xA, 0x1) => {
-                if !self.keyboard[vx as usize] && self.fetch() == 0xF000 {
-                    let _ = self.fetch();
+                if !self.keyboard[vx as usize] {
+                    self.skip()
                 }
             }
             (0xF, 0x0, 0x0, 0x0) => self.i = self.fetch(),
@@ -246,9 +246,7 @@ impl Chip8 {
                 for key in 0..self.keyboard.len() {
                     if self.keyboard[key] {
                         self.v[x] = key as u8;
-                        if self.fetch() == 0xF000 {
-                            let _ = self.fetch();
-                        }
+                        self.skip();
                         self.keyboard[key] = false;
                         break;
                     }
@@ -317,5 +315,11 @@ impl Chip8 {
             }
         }
         Ok(())
+    }
+
+    fn skip(&mut self) {
+        if self.fetch() == 0xF000 {
+            let _ = self.fetch();
+        }
     }
 }
