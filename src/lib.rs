@@ -1,4 +1,4 @@
-use fastrand;
+use itertools::Either;
 
 mod display;
 use display::Display;
@@ -131,18 +131,22 @@ impl Chip8 {
             }
             (0x5, _, _, 0x2) => {
                 let mut i = self.i;
-                let x = std::cmp::min(x, y);
-                let y = std::cmp::max(y, x);
-                for n in x..y as usize {
+                for n in if x <= y {
+                    Either::Left(x..=y)
+                } else {
+                    Either::Right((y..=x).rev())
+                } {
                     self.memory[i as usize] = self.v[n];
                     i = i.wrapping_add(1);
                 }
             }
             (0x5, _, _, 0x3) => {
                 let mut i = self.i;
-                let x = std::cmp::min(x, y);
-                let y = std::cmp::max(y, x);
-                for n in x..y as usize {
+                for n in if x <= y {
+                    Either::Left(x..=y)
+                } else {
+                    Either::Right((y..=x).rev())
+                } {
                     self.v[n] = self.memory[i as usize];
                     i = i.wrapping_add(1);
                 }

@@ -9,4 +9,5 @@ repository = "https://github.com/tobiasvl/deca"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-fastrand = "1.5.0"
+fastrand = "1.5"
+itertools = "0.10"
