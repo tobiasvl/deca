@@ -3,8 +3,8 @@ pub struct Display {
     pub dirty: bool,
     pub clear: bool,
     pub hires: bool,
-    pub width: u16,
-    pub height: u16,
+    pub width: u8,
+    pub height: u8,
     pub active_plane: u8,
 }
 
@@ -21,10 +21,14 @@ impl Display {
         }
     }
 
-    pub fn clear(&mut self) {
+    pub fn clear(&mut self, all_planes: bool) {
         for y in self.display.iter_mut() {
             for pixel in y.iter_mut() {
-                *pixel = 0;
+                if all_planes {
+                    *pixel = 0
+                } else {
+                    *pixel &= !self.active_plane;
+                }
             }
         }
 
@@ -44,8 +48,15 @@ impl Display {
                 if col + x as usize >= self.width as usize {
                     break;
                 }
-                collision = self.display[y as usize + row][x as usize + col] & sprite[row][col];
-                self.display[y as usize + row][x as usize + col] ^= sprite[row][col];
+                if sprite[row][col] == 1 {
+                    let display_pixel = &mut self.display[y as usize + row][x as usize + col];
+                    if *display_pixel & self.active_plane == 0 {
+                        *display_pixel |= self.active_plane;
+                    } else {
+                        *display_pixel &= !self.active_plane;
+                        collision = 1;
+                    };
+                }
             }
         }
         self.clear = false;
@@ -53,38 +64,92 @@ impl Display {
         collision
     }
 
-    pub fn scroll_up(&mut self, _pixels: u8) {
-        if !self.clear {
+    pub fn scroll_up(&mut self, pixels: u8) {
+        if !self.clear && pixels > 0 {
+            for y in pixels..self.height {
+                for x in 0..self.width {
+                    self.display[(y - pixels) as usize][x as usize] |=
+                        self.display[y as usize][x as usize] & self.active_plane;
+                    self.display[y as usize][x as usize] &= !self.active_plane;
+                }
+            }
+            for y in (self.height - pixels)..self.height {
+                for x in 0..=self.width {
+                    self.display[y as usize][x as usize] &= !self.active_plane;
+                }
+            }
+
             self.dirty = true;
         }
     }
 
-    pub fn scroll_down(&mut self, _pixels: u8) {
-        if !self.clear {
+    pub fn scroll_down(&mut self, pixels: u8) {
+        if !self.clear && pixels > 0 {
+            for y in (0..self.height - pixels).rev() {
+                for x in 0..self.width {
+                    self.display[(y + pixels) as usize][x as usize] |=
+                        self.display[y as usize][x as usize] & self.active_plane;
+                    self.display[y as usize][x as usize] &= !self.active_plane;
+                }
+            }
+            for y in 0..pixels {
+                for x in 0..self.width {
+                    self.display[y as usize][x as usize] &= !self.active_plane;
+                }
+            }
+
             self.dirty = true;
         }
     }
 
-    pub fn scroll_left(&mut self, _pixels: u8) {
-        if !self.clear {
+    pub fn scroll_left(&mut self, pixels: u8) {
+        if !self.clear && pixels > 0 {
+            for y in 0..self.height {
+                for x in pixels..self.width {
+                    self.display[y as usize][(x - pixels) as usize] |=
+                        self.display[y as usize][x as usize] & self.active_plane;
+                    self.display[y as usize][x as usize] &= !self.active_plane;
+                }
+            }
+            for y in 0..self.height {
+                for x in (self.width - pixels)..self.width {
+                    self.display[y as usize][x as usize] &= !self.active_plane;
+                }
+            }
+
             self.dirty = true;
         }
     }
 
-    pub fn scroll_right(&mut self, _pixels: u8) {
-        if !self.clear {
+    pub fn scroll_right(&mut self, pixels: u8) {
+        if !self.clear && pixels > 0 {
+            for y in 0..self.height {
+                for x in (0..self.width - pixels).rev() {
+                    self.display[y as usize][(x + pixels) as usize] |=
+                        self.display[y as usize][x as usize] & self.active_plane;
+                    self.display[y as usize][x as usize] &= !self.active_plane;
+                }
+            }
+            for y in 0..self.height {
+                for x in 0..pixels {
+                    self.display[y as usize][x as usize] &= !self.active_plane;
+                }
+            }
+
             self.dirty = true;
         }
     }
 
-    pub fn plane(&mut self, _plane: u8) {}
+    pub fn plane(&mut self, plane: u8) {
+        self.active_plane = plane;
+    }
 
     pub fn hires(&mut self, clear: bool) {
         self.hires = true;
         self.width = 128;
         self.height = 64;
         if clear && !self.clear {
-            self.clear();
+            self.clear(true);
             self.clear = true
         }
     }
@@ -94,7 +159,7 @@ impl Display {
         self.width = 64;
         self.height = 32;
         if clear && !self.clear {
-            self.clear();
+            self.clear(true);
             self.clear = true
         }
     }

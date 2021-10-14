@@ -143,7 +143,7 @@ impl Chip8 {
         match (op_1, op_2, op_3, op_4) {
             (0x0, 0x0, 0xC, _) => self.display.scroll_down(n),
             (0x0, 0x0, 0xD, _) => self.display.scroll_up(n),
-            (0x0, 0x0, 0xE, 0x0) => self.display.clear(),
+            (0x0, 0x0, 0xE, 0x0) => self.display.clear(false),
             (0x0, 0x0, 0xE, 0xE) => {
                 self.pc = self.stack[self.sp];
                 self.sp = self.sp.wrapping_sub(1);
@@ -261,23 +261,29 @@ impl Chip8 {
                     }
                 }
 
-                let mut sprite = Vec::<Vec<u8>>::new();
-                for _y in 0..height {
-                    let mut row = Vec::<u8>::new();
-                    let mut byte = self.memory[address as usize];
-                    for x in 0..width {
-                        if x == 8 {
+                let active_plane = self.display.active_plane;
+                for color in 1..=2 {
+                    if active_plane & color != 0 {
+                        let mut sprite = Vec::<Vec<u8>>::new();
+                        for _y in 0..height {
+                            let mut row = Vec::<u8>::new();
+                            let mut byte = self.memory[address as usize];
+                            for x in 0..width {
+                                if x == 8 {
+                                    address = address.wrapping_add(1);
+                                    byte = self.memory[address as usize];
+                                }
+                                row.push((byte << (x % 8)) >> 7);
+                            }
+                            sprite.push(row);
                             address = address.wrapping_add(1);
-                            byte = self.memory[address as usize];
                         }
-                        //byte <<= (x % 8);
-                        row.push((byte << (x % 8)) >> 7);
-                    }
-                    sprite.push(row);
-                    address = address.wrapping_add(1);
-                }
 
-                self.v[0xF] = self.display.draw(sprite, vx, vy)
+                        self.display.active_plane = color;
+                        self.v[0xF] = self.display.draw(sprite, vx, vy);
+                    }
+                }
+                self.display.active_plane = active_plane;
             }
             (0xE, _x, 0x9, 0xE) => {
                 if self.keyboard[vx as usize] {
@@ -304,7 +310,15 @@ impl Chip8 {
                     }
                 }
             }
-            (0xF, _, 0x0, 0x1) => self.display.plane(n),
+            (0xF, _, 0x0, 0x1) => {
+                if x > 3 {
+                    return Err(format!(
+                        "XO-CHIP currently only supports 3 planes, attempted to select plane {}",
+                        x
+                    ));
+                }
+                self.display.plane(x as u8);
+            }
             (0xF, _n, 0x3, 0xA) => (), // TODO
             (0xF, _, 0x1, 0x5) => self.delay = vx,
             (0xF, _, 0x1, 0x8) => self.sound = vx,
@@ -360,7 +374,6 @@ impl Chip8 {
     //}
 
     pub fn run(&mut self, tickrate: u16) -> Result<(), String> {
-        //self.display.dirty = false;
         if !self.quirks.delaywrap && self.delay > 0 {
             self.delay = self.delay.wrapping_sub(1)
         }
