@@ -18,6 +18,7 @@ pub struct Chip8 {
     pub keyboard: [bool; 16],
 }
 
+#[derive(Default, Debug, PartialEq)]
 pub struct Quirks {
     // shift VX instead of VY
     pub shift: bool,
@@ -39,7 +40,7 @@ pub struct Quirks {
 }
 
 impl Chip8 {
-    pub fn new(quirks: Quirks) -> Chip8 {
+    pub fn new() -> Chip8 {
         let mut memory = [0; 65536];
 
         let font = [
@@ -52,6 +53,15 @@ impl Chip8 {
         ];
 
         memory[80..(font.len() + 80)].clone_from_slice(&font[..]);
+
+        // TODO this is very ugly, implement Default for Quirks with correct max_rom and
+        // loresbigsprite
+        let quirks = Quirks {
+            max_rom: 65024,
+            loresbigsprite: true,
+            resclear: true,
+            ..Default::default()
+        };
 
         Chip8 {
             pc: 0x200,
@@ -67,6 +77,10 @@ impl Chip8 {
             quirks,
             keyboard: [false; 16],
         }
+    }
+
+    pub fn set_quirks(&mut self, quirks: Quirks) {
+        self.quirks = quirks;
     }
 
     pub fn read_rom(&mut self, rom: &[u8]) {
@@ -335,5 +349,11 @@ impl Chip8 {
         if self.fetch() == 0xF000 {
             let _ = self.fetch();
         }
+    }
+}
+
+impl Default for Chip8 {
+    fn default() -> Self {
+        Self::new()
     }
 }
