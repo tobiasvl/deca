@@ -1,7 +1,8 @@
+#![warn(missing_docs)]
 use itertools::Either;
 
 mod display;
-use display::Display;
+pub use display::Display;
 
 pub struct Chip8 {
     pub pc: u16,
@@ -141,6 +142,10 @@ impl Chip8 {
         let op_4 = opcode & 0x000F;
 
         match (op_1, op_2, op_3, op_4) {
+            // from chip8run:
+            (0x0, 0x0, 0x1, _) => return Err(format!("Interpreter exited with exit code {}", n)),
+            // https://chip-8.github.io/extensions/#super-chip-with-scroll-up
+            (0x0, 0x0, 0xB, _) => self.display.scroll_up(n),
             (0x0, 0x0, 0xC, _) => self.display.scroll_down(n),
             (0x0, 0x0, 0xD, _) => self.display.scroll_up(n),
             (0x0, 0x0, 0xE, 0x0) => self.display.clear(false),
@@ -148,9 +153,11 @@ impl Chip8 {
                 self.pc = self.stack[self.sp];
                 self.sp = self.sp.wrapping_sub(1);
             }
+            // from chip8run:
+            (0x0, 0x0, 0xF, 0xA) => self.quirks.loadstore = !self.quirks.loadstore,
             (0x0, 0x0, 0xF, 0xB) => self.display.scroll_right(4),
             (0x0, 0x0, 0xF, 0xC) => self.display.scroll_left(4),
-            (0x0, 0x0, 0xF, 0xD) => std::process::exit(0),
+            (0x0, 0x0, 0xF, 0xD) => return Err(String::from("Interpreter exited")),
             (0x0, 0x0, 0xF, 0xE) => self.display.lores(self.quirks.resclear),
             (0x0, 0x0, 0xF, 0xF) => self.display.hires(self.quirks.resclear),
             (0x0, _, _, _) => return Err(String::from("Machine code is not supported")),
