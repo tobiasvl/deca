@@ -1,5 +1,6 @@
 #![warn(missing_docs)]
 use itertools::Either;
+use octopt::{get_font_data, LoResDxy0Behavior, Options, Platform, Quirks};
 
 mod display;
 pub use display::Display;
@@ -15,86 +16,24 @@ pub struct Chip8 {
     pub delay: u8,
     pub sound: u8,
     pub display: Display,
-    pub quirks: Quirks,
+    pub options: Options,
     pub keyboard: [bool; 16],
 }
 
-#[derive(Default, Debug, PartialEq)]
-pub struct Quirks {
-    // shift VX instead of VY
-    pub shift: bool,
-    // don't increment I after load/store
-    pub loadstore: bool,
-    // jump to VM instead of V0
-    pub jump0: bool,
-    // scratch VF after logic ops
-    pub logic: bool,
-    // Clip sprites instead of wrapping
-    pub clip: bool,
-    pub vblank: bool,
-    pub resclear: bool,
-    pub delaywrap: bool,
-    pub multicollision: bool,
-    pub loresbigsprite: bool,
-    pub lorestallsprite: bool,
-    pub max_rom: u16,
-}
-
 impl Chip8 {
-    pub fn new() -> Chip8 {
+    pub fn new(platform: Platform) -> Chip8 {
+        let options = Options::new(platform);
+
         let mut memory = [0; 65536];
 
-        let font = [
-            0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
-            0x20, 0x60, 0x20, 0x20, 0x70, // 1
-            0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
-            0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
-            0x90, 0x90, 0xF0, 0x10, 0x10, // 4
-            0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
-            0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
-            0xF0, 0x10, 0x20, 0x40, 0x40, // 7
-            0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
-            0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
-            0xF0, 0x90, 0xF0, 0x90, 0x90, // A
-            0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
-            0xF0, 0x80, 0x80, 0x80, 0xF0, // C
-            0xE0, 0x90, 0x90, 0x90, 0xE0, // D
-            0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
-            0xF0, 0x80, 0xF0, 0x80, 0x80, // F
-        ];
+        let (font, big_font) = get_font_data(&options.font_style);
 
         memory[0x50..(0x50 + font.len())].clone_from_slice(&font[..]);
 
-        let big_font = [
-            0xFF, 0xFF, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xFF, 0xFF, // 0
-            0x18, 0x78, 0x78, 0x18, 0x18, 0x18, 0x18, 0x18, 0xFF, 0xFF, // 1
-            0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, // 2
-            0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, // 3
-            0xC3, 0xC3, 0xC3, 0xC3, 0xFF, 0xFF, 0x03, 0x03, 0x03, 0x03, // 4
-            0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, // 5
-            0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF, // 6
-            0xFF, 0xFF, 0x03, 0x03, 0x06, 0x0C, 0x18, 0x18, 0x18, 0x18, // 7
-            0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF, // 8
-            0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, // 9
-            0x7E, 0xFF, 0xC3, 0xC3, 0xC3, 0xFF, 0xFF, 0xC3, 0xC3, 0xC3, // A
-            0xFC, 0xFC, 0xC3, 0xC3, 0xFC, 0xFC, 0xC3, 0xC3, 0xFC, 0xFC, // B
-            0x3C, 0xFF, 0xC3, 0xC0, 0xC0, 0xC0, 0xC0, 0xC3, 0xFF, 0x3C, // C
-            0xFC, 0xFE, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xFE, 0xFC, // D
-            0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, // E
-            0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, 0xC0, 0xC0, 0xC0, 0xC0, // F
-        ];
-
-        memory[(0x50 + font.len())..(0x50 + font.len() + big_font.len())]
-            .clone_from_slice(&big_font[..]);
-
-        // TODO this is very ugly, implement Default for Quirks with correct max_rom and
-        // loresbigsprite
-        let quirks = Quirks {
-            max_rom: 65024,
-            loresbigsprite: true,
-            resclear: true,
-            ..Default::default()
-        };
+        if let Some(big_font) = big_font {
+            memory[(0x50 + font.len())..(0x50 + font.len() + big_font.len())]
+                .clone_from_slice(&big_font[..]);
+        }
 
         Chip8 {
             pc: 0x200,
@@ -107,13 +46,13 @@ impl Chip8 {
             delay: 0,
             sound: 0,
             display: Display::new(),
-            quirks,
+            options,
             keyboard: [false; 16],
         }
     }
 
     pub fn set_quirks(&mut self, quirks: Quirks) {
-        self.quirks = quirks;
+        self.options.quirks = quirks;
     }
 
     pub fn read_rom(&mut self, rom: &[u8]) {
@@ -154,12 +93,19 @@ impl Chip8 {
                 self.sp = self.sp.wrapping_sub(1);
             }
             // from chip8run:
-            (0x0, 0x0, 0xF, 0xA) => self.quirks.loadstore = !self.quirks.loadstore,
+            (0x0, 0x0, 0xF, 0xA) => {
+                self.options.quirks.load_store =
+                    Some(!self.options.quirks.load_store.unwrap_or(false))
+            }
             (0x0, 0x0, 0xF, 0xB) => self.display.scroll_right(4),
             (0x0, 0x0, 0xF, 0xC) => self.display.scroll_left(4),
             (0x0, 0x0, 0xF, 0xD) => return Err(String::from("Interpreter exited")),
-            (0x0, 0x0, 0xF, 0xE) => self.display.lores(self.quirks.resclear),
-            (0x0, 0x0, 0xF, 0xF) => self.display.hires(self.quirks.resclear),
+            (0x0, 0x0, 0xF, 0xE) => self
+                .display
+                .lores(self.options.quirks.res_clear == Some(true)),
+            (0x0, 0x0, 0xF, 0xF) => self
+                .display
+                .hires(self.options.quirks.res_clear == Some(true)),
             (0x0, _, _, _) => return Err(String::from("Machine code is not supported")),
             (0x1, _, _, _) => self.pc = nnn,
             (0x2, _, _, _) => {
@@ -222,7 +168,11 @@ impl Chip8 {
                 self.v[x] = vx.wrapping_sub(vy)
             }
             (0x8, _, _, 0x6) => {
-                let operand = if self.quirks.shift { vx } else { vy };
+                let operand = if self.options.quirks.shift == Some(true) {
+                    vx
+                } else {
+                    vy
+                };
                 self.v[0xF] = operand & 1;
                 self.v[x] = operand >> 1;
             }
@@ -234,7 +184,11 @@ impl Chip8 {
                 self.v[x] = vy.wrapping_sub(vx)
             }
             (0x8, _, _, 0xE) => {
-                let operand = if self.quirks.shift { vx } else { vy };
+                let operand = if self.options.quirks.shift == Some(true) {
+                    vx
+                } else {
+                    vy
+                };
 
                 self.v[0xF] = (operand & 0x80) >> 7;
                 self.v[x] = operand << 1
@@ -246,7 +200,11 @@ impl Chip8 {
             }
             (0xA, _, _, _) => self.i = nnn,
             (0xB, _, _, _) => {
-                let jump_register = if self.quirks.jump0 { vx } else { self.v[0] } as u16;
+                let jump_register = if self.options.quirks.jump0 == Some(true) {
+                    vx
+                } else {
+                    self.v[0]
+                } as u16;
                 self.pc = jump_register + nnn;
             }
             (0xC, _x, _, _) => {
@@ -258,10 +216,13 @@ impl Chip8 {
                 let mut address = self.i;
 
                 if n == 0 {
-                    if self.display.hires || self.quirks.loresbigsprite {
+                    if self.display.hires
+                        || self.options.quirks.lores_dxy0 == Some(LoResDxy0Behavior::BigSprite)
+                    {
                         width = 16;
                         height = 16;
-                    } else if self.quirks.lorestallsprite {
+                    } else if self.options.quirks.lores_dxy0 == Some(LoResDxy0Behavior::TallSprite)
+                    {
                         height = 16;
                     } else {
                         return Ok(());
@@ -347,7 +308,7 @@ impl Chip8 {
                     self.memory[i as usize] = self.v[n];
                     i = i.wrapping_add(1);
                 }
-                if !self.quirks.loadstore {
+                if self.options.quirks.load_store != Some(true) {
                     self.i = i
                 }
             }
@@ -357,7 +318,7 @@ impl Chip8 {
                     self.v[n] = self.memory[i as usize];
                     i = i.wrapping_add(1);
                 }
-                if !self.quirks.loadstore {
+                if self.options.quirks.load_store != Some(true) {
                     self.i = i
                 }
             }
@@ -381,7 +342,7 @@ impl Chip8 {
     //}
 
     pub fn run(&mut self, tickrate: u16) -> Result<(), String> {
-        if !self.quirks.delaywrap && self.delay > 0 {
+        if self.options.quirks.delay_wrap != Some(true) && self.delay > 0 {
             self.delay = self.delay.wrapping_sub(1)
         }
         if self.sound > 0 {
@@ -393,7 +354,7 @@ impl Chip8 {
             let opcode = self.fetch();
             //println!("{:02x}: {:04x}", addr, opcode);
             self.decode(opcode)?;
-            if self.quirks.vblank && opcode >= 0xD000 && opcode <= 0xDFFF {
+            if self.options.quirks.vblank == Some(true) && opcode >= 0xD000 && opcode <= 0xDFFF {
                 break;
             }
         }
@@ -409,6 +370,6 @@ impl Chip8 {
 
 impl Default for Chip8 {
     fn default() -> Self {
-        Self::new()
+        Self::new(Platform::Octo)
     }
 }

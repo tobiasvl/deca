@@ -1,27 +1,11 @@
 use deca;
-use deca::Quirks;
+use octopt;
 
 // Runs the BonCoder/BestCoder test (BC_test). It requires SUPER-CHIP quirks compatibility, and
 // tests a variety of opcodes.
 #[test]
 fn bon_test() {
-    let schip = Quirks {
-        shift: true,
-        loadstore: true,
-        jump0: true,
-        logic: false,
-        clip: true,
-        vblank: false,
-        resclear: false,
-        delaywrap: false,
-        multicollision: false,
-        loresbigsprite: false,
-        lorestallsprite: false,
-        max_rom: 3583,
-    };
-
-    let mut chip8 = deca::Chip8::new();
-    chip8.set_quirks(schip);
+    let mut chip8 = deca::Chip8::new(octopt::Platform::Schip);
     chip8.read_rom(include_bytes!("test_roms/BC_test.ch8"));
     while chip8.pc != 0x30E {
         chip8.run(1).unwrap();
@@ -495,7 +479,7 @@ fn bon_test() {
 // Quirks agnostic, tests a variety of opcodes.
 #[test]
 fn corax89_test() {
-    let mut chip8 = deca::Chip8::new();
+    let mut chip8 = deca::Chip8::default();
     chip8.read_rom(include_bytes!("test_roms/test_opcode.ch8"));
     while chip8.pc != 0x3DC {
         chip8.run(1).unwrap();
