@@ -1,6 +1,8 @@
 Deca
 ====
 [![crates.io](https://img.shields.io/crates/v/deca.svg)](https://crates.io/crates/deca)
+[![docs.rs](https://img.shields.io/docsrs/deca.svg)](https://docs.rs/deca)
+[![dependency status](https://deps.rs/repo/github/tobiasvl/deca/status.svg)](https://deps.rs/crate/deca)
 
 Deca is basically just another CHIP-8 emulator written in Rust, but it
 
