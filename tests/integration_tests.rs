@@ -1,11 +1,9 @@
-use deca;
-use octopt;
-
 // Runs the BonCoder/BestCoder test (BC_test). It requires SUPER-CHIP quirks compatibility, and
 // tests a variety of opcodes.
 #[test]
+#[allow(clippy::too_many_lines, clippy::needless_range_loop)]
 fn bon_test() {
-    let mut chip8 = deca::Chip8::new(octopt::Platform::Schip);
+    let mut chip8 = deca::Chip8::new(octopt::Options::new(octopt::Platform::Schip));
     chip8.read_rom(include_bytes!("test_roms/BC_test.ch8"));
     while chip8.pc != 0x30E {
         chip8.run(1).unwrap();
@@ -478,6 +476,7 @@ fn bon_test() {
 // Runs corax89's tests: https://github.com/corax89/chip8-test-rom
 // Quirks agnostic, tests a variety of opcodes.
 #[test]
+#[allow(clippy::too_many_lines)]
 fn corax89_test() {
     let mut chip8 = deca::Chip8::default();
     chip8.read_rom(include_bytes!("test_roms/test_opcode.ch8"));
