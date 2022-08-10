@@ -1,6 +1,6 @@
 [package]
 name = "deca"
-version = "0.0.9"
+version = "0.0.10"
 authors = ["Tobias V. Langhoff <tobias@langhoff.no>"]
 edition = "2021"
 license = "MIT"
@@ -12,4 +12,4 @@ categories = ["emulators"]
 [dependencies]
 fastrand = "1.5"
 itertools = "0.10"
-octopt = "0.1"
+octopt = "1.0"

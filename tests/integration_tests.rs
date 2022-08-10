@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 // Runs the BonCoder/BestCoder test (BC_test). It requires SUPER-CHIP quirks compatibility, and
 // tests a variety of opcodes.
 #[test]

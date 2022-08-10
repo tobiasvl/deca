@@ -2,7 +2,7 @@
 
 //! This module contains the entire "CPU" part of Deca's CHIP-8 interpreter.
 use itertools::Either;
-use octopt::{get_font_data, LoResDxy0Behavior, Options, Quirks};
+use octopt::{LoResDxy0Behavior, Options, Quirks};
 
 mod display;
 pub use display::Display;
@@ -41,7 +41,7 @@ impl Chip8 {
     pub fn new(options: Options) -> Chip8 {
         let mut memory = [0; 65536];
 
-        let (font, big_font) = get_font_data(&options.font_style);
+        let (font, big_font) = &options.font_style.get_font_data();
 
         memory[0x50..(0x50 + font.len())].clone_from_slice(&font[..]);
 
