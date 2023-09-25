@@ -13,3 +13,5 @@ categories = ["emulators"]
 fastrand = "1.5"
 itertools = "0.10"
 octopt = "1.0"
+ux = "0.1.5"
+decasm = { path = "../decasm", version = "*" }

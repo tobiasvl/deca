@@ -1,11 +1,17 @@
 #![warn(missing_docs)]
 
 //! This module contains the entire "CPU" part of Deca's CHIP-8 interpreter.
+pub use decasm;
+pub use decasm::Instruction;
+use decasm::{Byte, Register};
 use itertools::Either;
-use octopt::{LoResDxy0Behavior, Options, Quirks};
+use octopt::LoResDxy0Behavior;
+pub use octopt::{Options, Quirks};
 
 mod display;
 pub use display::Display;
+
+use ux::u4;
 
 /// A struct for holding the state of the CHIP-8 interpreter.
 pub struct Chip8 {
@@ -38,6 +44,7 @@ pub struct Chip8 {
 
 impl Chip8 {
     /// Create a new CHIP-8 interpreter with the given [`octopt::Options`].
+    #[must_use]
     pub fn new(options: Options) -> Chip8 {
         let mut memory = [0; 65536];
 
@@ -76,7 +83,26 @@ impl Chip8 {
         self.memory[0x200..][..rom.len()].copy_from_slice(rom);
     }
 
-    /// Fetch the next instruction from memory.
+    /// Set variable register's value.
+    ///
+    /// Note that this is just a convenience method you can use if you have a [`Register`]; you can also just use [`self::v`] directly.
+    pub fn set_register(&mut self, register: Register, value: u8) {
+        self.v[usize::from(register)] = value;
+    }
+
+    /// Get variable register's value.
+    ///
+    /// Note that this is just a convenience method you can use if you have a [`Register`]; you can also just use [`self::v`] directly.
+    #[must_use]
+    pub fn register(&self, register: Register) -> u8 {
+        self.v[usize::from(register)]
+    }
+
+    /// Fetch the next opcode from memory and increment the Program Counter.
+    ///
+    /// Note that this method does not guarantee that the Program Counter will point at the
+    /// next opcode afterwards, as the opcode might have an immediate operand which is not
+    /// fetched until decoding (in the case of an [`Instruction::SetIndexLong`]).
     pub fn fetch(&mut self) -> u16 {
         let opcode = (u16::from(self.memory[self.pc as usize]) << 8)
             | u16::from(self.memory[self.pc.wrapping_add(1) as usize]);
@@ -84,8 +110,35 @@ impl Chip8 {
         opcode
     }
 
-    /// Decode and execute a CHIP-8 opcode.
-    /// TODO: Change this function's name? It doesn't just decode.
+    /// Decode a CHIP-8 opcode into an `[Instruction]`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `Err` with an error message if the opcode doesn't map to an instruction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use deca::{Chip8, Instruction, Options};
+    /// let mut chip8 = Chip8::default();
+    /// assert_eq!(chip8.decode(0x00E0), Ok(Instruction::Clear));
+    /// ```
+    pub fn decode(&mut self, opcode: u16) -> Result<Instruction, String> {
+        let _foo = Instruction::try_from(opcode);
+        match _foo {
+            Ok(opcode) => match opcode {
+                Instruction::SetIndexLong => Ok(Instruction::SetIndex(self.fetch())),
+                instruction => Ok(instruction),
+            },
+            Err(e) => Err(format!("{e} at PC {}", self.pc)),
+        }
+        //Ok(match Instruction::try_from(opcode)? {
+        //    Instruction::SetIndexLong => Instruction::SetIndex(self.fetch()),
+        //    instruction => instruction,
+        //})
+    }
+
+    /// Execute a CHIP-8 `[Instruction]`.
     ///
     /// # Errors
     ///
@@ -93,168 +146,161 @@ impl Chip8 {
     ///
     /// # Panics
     ///
-    /// Should only panic if executing an unimplemented opcode.
-    pub fn decode(&mut self, opcode: u16) -> Result<(), String> {
-        let x = ((opcode & 0x0F00) >> 8) as usize;
-        let y = ((opcode & 0x00F0) >> 4) as usize;
-        let vx = self.v[x];
-        let vy = self.v[y];
-        let nnn = opcode & 0x0FFF;
-        let kk = (opcode & 0x00FF) as u8;
-        let n = (opcode & 0x000F) as u8;
-
-        let op_1 = (opcode & 0xF000) >> 12;
-        let op_2 = (opcode & 0x0F00) >> 8;
-        let op_3 = (opcode & 0x00F0) >> 4;
-        let op_4 = opcode & 0x000F;
-
-        match (op_1, op_2, op_3, op_4) {
+    /// Should only panic if executing an unimplemented instruction.
+    // Allow unwrapping; should only be used when casting eg. a u4 into a larger number type like usize
+    #[allow(clippy::too_many_lines, clippy::unwrap_used)]
+    pub fn execute(&mut self, instruction: Instruction) -> Result<(), String> {
+        match instruction {
             #![allow(clippy::match_same_arms, clippy::cast_possible_truncation)]
-            // from chip8run:
-            (0x0, 0x0, 0x1, _) => return Err(format!("Interpreter exited with exit code {}", n)),
-            // https://chip-8.github.io/extensions/#super-chip-with-scroll-up
-            (0x0, 0x0, 0xB, _) => self.display.scroll_up(n),
-            (0x0, 0x0, 0xC, _) => self.display.scroll_down(n),
-            (0x0, 0x0, 0xD, _) => self.display.scroll_up(n),
-            (0x0, 0x0, 0xE, 0x0) => self.display.clear(false),
-            (0x0, 0x0, 0xE, 0xE) => {
+            Instruction::Exit(Some(n)) => {
+                return Err(format!("Interpreter exited with exit code {n}"))
+            }
+            Instruction::Exit(None) => return Err("Interpreter exited".to_string()),
+            Instruction::ScrollUp(n) => self.display.scroll_up(u8::from(n)),
+            Instruction::ScrollDown(n) => self.display.scroll_down(u8::from(n)),
+            Instruction::Clear => self.display.clear(false),
+            Instruction::Return => {
                 if self.sp == 0 {
                     return Err(String::from("Attempted pop from empty stack"));
                 }
                 self.pc = self.stack[self.sp];
                 self.sp -= 1;
             }
-            // from chip8run:
-            (0x0, 0x0, 0xF, 0xA) => {
+            Instruction::ToggleLoadStoreQuirk => {
                 self.options.quirks.load_store =
                     Some(!self.options.quirks.load_store.unwrap_or(false));
             }
-            (0x0, 0x0, 0xF, 0xB) => self.display.scroll_right(4),
-            (0x0, 0x0, 0xF, 0xC) => self.display.scroll_left(4),
-            (0x0, 0x0, 0xF, 0xD) => return Err(String::from("Interpreter exited")),
-            (0x0, 0x0, 0xF, 0xE) => self
+            Instruction::ScrollRight => self.display.scroll_right(4),
+            Instruction::ScrollLeft => self.display.scroll_left(4),
+            Instruction::LoRes => self
                 .display
                 .lores(self.options.quirks.res_clear == Some(true)),
-            (0x0, 0x0, 0xF, 0xF) => self
+            Instruction::HiRes => self
                 .display
                 .hires(self.options.quirks.res_clear == Some(true)),
-            (0x0, _, _, _) => return Err(String::from("Machine code is not supported")),
-            (0x1, _, _, _) => self.pc = nnn,
-            (0x2, _, _, _) => {
+            Instruction::CallMachineCode(_) => {
+                return Err(String::from("Machine code is not supported"))
+            }
+            Instruction::Jump(nnn) => self.pc = u16::from(nnn),
+            Instruction::Call(nnn) => {
                 self.sp += 1;
                 if self.sp >= self.stack.len() {
                     return Err(String::from("Stack limit exceeded"));
                 }
                 self.stack[self.sp] = self.pc;
-                self.pc = nnn;
+                self.pc = u16::from(nnn);
             }
-            (0x3, _, _, _) => {
-                if vx == kk {
+            Instruction::SkipIfEqual(Register(x), Byte::Immediate(kk)) => {
+                if self.v[usize::try_from(x).unwrap()] == kk {
                     self.skip();
                 }
             }
-            (0x4, _, _, _) => {
-                if vx != kk {
+            Instruction::SkipIfNotEqual(Register(x), Byte::Immediate(kk)) => {
+                if self.v[usize::try_from(x).unwrap()] != kk {
                     self.skip();
                 }
             }
-            (0x5, _, _, 0x0) => {
-                if vx == vy {
+            Instruction::SkipIfEqual(Register(x), Byte::Register(Register(y))) => {
+                if self.v[usize::try_from(x).unwrap()] == self.v[usize::try_from(y).unwrap()] {
                     self.skip();
                 }
             }
-            (0x5, _, _, 0x2) => {
-                let mut i = self.i;
-                for n in if x <= y {
-                    Either::Left(x..=y)
-                } else {
-                    Either::Right((y..=x).rev())
-                } {
-                    self.memory[i as usize] = self.v[n];
-                    i = i.wrapping_add(1);
-                }
+            Instruction::Set(Register(x), Byte::Immediate(kk)) => {
+                self.v[usize::try_from(x).unwrap()] = kk;
             }
-            (0x5, _, _, 0x3) => {
-                let mut i = self.i;
-                for n in if x <= y {
-                    Either::Left(x..=y)
-                } else {
-                    Either::Right((y..=x).rev())
-                } {
-                    self.v[n] = self.memory[i as usize];
-                    i = i.wrapping_add(1);
-                }
+            Instruction::Add(Register(x), Byte::Immediate(kk)) => {
+                self.v[usize::try_from(x).unwrap()] =
+                    self.v[usize::try_from(x).unwrap()].wrapping_add(kk);
             }
-            (0x6, _, _, _) => self.v[x] = kk,
-            (0x7, _, _, _) => self.v[x] = vx.wrapping_add(kk),
-            (0x8, _, _, 0) => self.v[x] = vy,
-            (0x8, _, _, 1) => self.v[x] |= vy,
-            (0x8, _, _, 2) => self.v[x] &= vy,
-            (0x8, _, _, 3) => self.v[x] ^= vy,
-            (0x8, _, _, 4) => {
-                self.v[0xF] = if (u16::from(vx) + u16::from(vy)) > 0xFF {
+            Instruction::Set(Register(x), Byte::Register(Register(y))) => {
+                self.v[usize::try_from(x).unwrap()] = self.v[usize::try_from(y).unwrap()];
+            }
+            Instruction::Or(Register(x), Register(y)) => {
+                self.v[usize::try_from(x).unwrap()] |= self.v[usize::try_from(y).unwrap()];
+            }
+            Instruction::And(Register(x), Register(y)) => {
+                self.v[usize::try_from(x).unwrap()] &= self.v[usize::try_from(y).unwrap()];
+            }
+            Instruction::Xor(Register(x), Register(y)) => {
+                self.v[usize::try_from(x).unwrap()] ^= self.v[usize::try_from(y).unwrap()];
+            }
+            Instruction::Add(Register(x), Byte::Register(Register(y))) => {
+                self.v[0xF] = if (u16::from(self.v[usize::try_from(x).unwrap()])
+                    + u16::from(self.v[usize::try_from(y).unwrap()]))
+                    > 0xFF
+                {
                     1
                 } else {
                     0
                 };
-                self.v[x] = vx.wrapping_add(vy);
+                // FIXME
+                self.v[usize::try_from(x).unwrap()] = self.v[usize::try_from(x).unwrap()]
+                    .wrapping_add(self.v[usize::try_from(y).unwrap()]);
             }
-            (0x8, _, _, 5) => {
-                self.v[0xF] = match vx.overflowing_sub(vy) {
+            Instruction::Sub(Register(x), Register(y)) => {
+                self.v[0xF] = match self.v[usize::from(u8::from(x))]
+                    .overflowing_sub(self.v[usize::try_from(y).unwrap()])
+                {
                     (_, true) => 0,
                     _ => 1,
                 };
-                self.v[x] = vx.wrapping_sub(vy);
+                self.v[usize::try_from(x).unwrap()] = self.v[usize::try_from(x).unwrap()]
+                    .wrapping_sub(self.v[usize::try_from(y).unwrap()]);
             }
-            (0x8, _, _, 0x6) => {
-                let operand = if self.options.quirks.shift == Some(true) {
-                    vx
+            Instruction::ShiftLeft(Register(x), Register(y)) => {
+                dbg!(self.options.quirks.shift);
+                let operand: u8 = if self.options.quirks.shift == Some(true) {
+                    self.v[usize::try_from(x).unwrap()]
                 } else {
-                    vy
+                    self.v[usize::try_from(y).unwrap()]
                 };
                 self.v[0xF] = operand & 1;
-                self.v[x] = operand >> 1;
+                self.v[usize::try_from(x).unwrap()] = operand >> 1;
             }
-            (0x8, _, _, 0x7) => {
-                self.v[0xF] = match vy.overflowing_sub(vx) {
+            Instruction::SubReverse(Register(x), Register(y)) => {
+                self.v[0xF] = match self.v[usize::from(u8::from(y))]
+                    .overflowing_sub(self.v[usize::try_from(x).unwrap()])
+                {
                     (_, true) => 0,
                     _ => 1,
                 };
-                self.v[x] = vy.wrapping_sub(vx);
+                self.v[usize::try_from(x).unwrap()] = self.v[usize::from(u8::from(y))]
+                    .wrapping_sub(self.v[usize::try_from(x).unwrap()]);
             }
-            (0x8, _, _, 0xE) => {
-                let operand = if self.options.quirks.shift == Some(true) {
-                    vx
+            Instruction::ShiftRight(Register(x), Register(y)) => {
+                dbg!(self.options.quirks.shift);
+                let operand: u8 = if self.options.quirks.shift == Some(true) {
+                    self.v[usize::try_from(x).unwrap()]
                 } else {
-                    vy
+                    self.v[usize::try_from(y).unwrap()]
                 };
 
                 self.v[0xF] = (operand & 0x80) >> 7;
-                self.v[x] = operand << 1;
+                self.v[usize::try_from(x).unwrap()] = operand << 1;
             }
-            (0x9, _, _, 0x0) => {
-                if vx != vy {
+            Instruction::SkipIfNotEqual(Register(x), Byte::Register(Register(y))) => {
+                if self.v[usize::try_from(x).unwrap()] != self.v[usize::try_from(y).unwrap()] {
                     self.skip();
                 }
             }
-            (0xA, _, _, _) => self.i = nnn,
-            (0xB, _, _, _) => {
+            Instruction::SetIndex(nnn) => self.i = nnn,
+            Instruction::JumpRelative(nnn) => {
                 let jump_register = u16::from(if self.options.quirks.jump0 == Some(true) {
-                    vx
+                    self.v[usize::try_from((nnn & 0x0F00) >> 8).unwrap()]
                 } else {
                     self.v[0]
                 });
                 self.pc = jump_register + nnn;
             }
-            (0xC, _x, _, _) => {
-                self.v[x] = fastrand::u8(..) & kk;
+            Instruction::Random(Register(x), kk) => {
+                self.v[usize::try_from(x).unwrap()] = fastrand::u8(..) & kk;
             }
-            (0xD, _, _, _) => {
-                let mut width = 8;
-                let mut height = n;
+            Instruction::Draw(Register(x), Register(y), n) => {
+                let mut width: u8 = 8;
+                let mut height: u8 = n.into();
                 let mut address = self.i;
 
-                if n == 0 {
+                if n == u4::new(0) {
                     if self.display.hires
                         || self.options.quirks.lores_dxy0 == Some(LoResDxy0Behavior::BigSprite)
                     {
@@ -287,62 +333,71 @@ impl Chip8 {
                         }
 
                         self.display.active_plane = color;
-                        self.v[0xF] = self.display.draw(sprite, vx, vy);
+                        self.v[0xF] = self.display.draw(
+                            sprite,
+                            self.v[usize::try_from(x).unwrap()],
+                            self.v[usize::try_from(y).unwrap()],
+                        );
                     }
                 }
                 self.display.active_plane = active_plane;
             }
-            (0xE, _x, 0x9, 0xE) => {
-                if self.keyboard[vx as usize] {
+            Instruction::SkipKey(Register(x)) => {
+                if self.keyboard[usize::from(self.v[usize::try_from(x).unwrap()])] {
                     self.skip();
                 }
             }
-            (0xE, _x, 0xA, 0x1) => {
-                if !self.keyboard[vx as usize] {
+            Instruction::SkipNotKey(Register(x)) => {
+                if !self.keyboard[usize::from(self.v[usize::try_from(x).unwrap()])] {
                     self.skip();
                 }
             }
-            (0xF, 0x0, 0x0, 0x0) => self.i = self.fetch(),
-            (0xF, 0x0, 0x0, 0x2) => todo!(),
-            (0xF, _, 0x0, 0x7) => self.v[x] = self.delay,
-            (0xF, _x, 0x0, 0xA) => {
-                // todo!();
+            Instruction::SoundStuff => todo!(),
+            Instruction::LoadDelay(Register(x)) => self.v[usize::try_from(x).unwrap()] = self.delay,
+            Instruction::BlockKey(Register(x)) => {
                 self.pc = self.pc.wrapping_sub(2);
                 for key in 0..self.keyboard.len() {
                     if self.keyboard[key] {
-                        self.v[x] = key as u8;
+                        self.v[usize::try_from(x).unwrap()] = key as u8;
                         self.skip();
                         self.keyboard[key] = false;
                         break;
                     }
                 }
             }
-            (0xF, _, 0x0, 0x1) => {
-                if x > 3 {
+            Instruction::SelectPlane(n) => {
+                let n: u8 = n.into();
+                if n > 3 {
                     return Err(format!(
                         "XO-CHIP currently only supports 3 planes, attempted to select plane {}",
-                        x
+                        n
                     ));
                 }
-                self.display.plane(x as u8);
+                self.display.plane(n);
             }
-            (0xF, _n, 0x3, 0xA) => todo!(),
-            (0xF, _, 0x1, 0x5) => self.delay = vx,
-            (0xF, _, 0x1, 0x8) => self.sound = vx,
-            (0xF, _, 0x1, 0xE) => self.i = self.i.wrapping_add(u16::from(vx)),
-            (0xF, _x, 0x2, 0x9) => {
-                self.i = 0x50 + u16::from(vx * 5);
+            Instruction::SoundStuffTwo => todo!(),
+            Instruction::SetDelay(Register(x)) => self.delay = self.v[usize::try_from(x).unwrap()],
+            Instruction::SetSound(Register(x)) => self.sound = self.v[usize::try_from(x).unwrap()],
+            Instruction::AddRegisterToIndex(Register(x)) => {
+                self.i = self
+                    .i
+                    .wrapping_add(u16::from(self.v[usize::try_from(x).unwrap()]));
             }
-            (0xF, _x, 0x3, 0x0) => {
-                self.i = 0xA0 + u16::from(vx * 10);
+            Instruction::FontCharacter(Register(x)) => {
+                self.i = 0x50 + u16::from(self.v[usize::try_from(x).unwrap()] * 5);
             }
-            (0xF, _x, 0x3, 0x3) => {
+            Instruction::BigFontCharacter(Register(x)) => {
+                self.i = 0xA0 + u16::from(self.v[usize::try_from(x).unwrap()] * 10);
+            }
+            Instruction::Bcd(Register(x)) => {
+                let vx: u8 = self.v[usize::try_from(x).unwrap()];
                 self.memory[self.i as usize] = vx / 100;
                 self.memory[self.i as usize + 1] = (vx / 10) % 10;
                 self.memory[self.i as usize + 2] = vx % 10;
             }
-            (0xF, _, 0x5, 0x5) => {
+            Instruction::Store(Register(x)) => {
                 let mut i = self.i;
+                let x = usize::try_from(x).unwrap();
                 for n in 0..=x {
                     self.memory[i as usize] = self.v[n];
                     i = i.wrapping_add(1);
@@ -351,8 +406,10 @@ impl Chip8 {
                     self.i = i;
                 }
             }
-            (0xF, _, 0x6, 0x5) => {
+            Instruction::Load(Register(x)) => {
                 let mut i = self.i;
+                let x = usize::try_from(x).unwrap();
+
                 for n in 0..=x {
                     self.v[n] = self.memory[i as usize];
                     i = i.wrapping_add(1);
@@ -361,24 +418,49 @@ impl Chip8 {
                     self.i = i;
                 }
             }
-            (0xF, _x, 0x7, 0x5) => {
+            Instruction::StoreRange(Register(x), Register(y)) => {
+                let mut i = self.i;
+                // FIXME this can't be necessary...
+                let (x, y): (usize, usize) = (usize::from(u8::from(x)), usize::from(u8::from(y)));
+                for n in if x <= y {
+                    Either::Left(x..=y)
+                } else {
+                    Either::Right((y..=x).rev())
+                } {
+                    self.memory[i as usize] = self.v[n];
+                    i = i.wrapping_add(1);
+                }
+            }
+            Instruction::LoadRange(Register(x), Register(y)) => {
+                let mut i = self.i;
+                // FIXME this can't be necessary...
+                let (x, y): (usize, usize) = (usize::from(u8::from(x)), usize::from(u8::from(y)));
+                for n in if x <= y {
+                    Either::Left(x..=y)
+                } else {
+                    Either::Right((y..=x).rev())
+                } {
+                    self.v[n] = self.memory[i as usize];
+                    i = i.wrapping_add(1);
+                }
+            }
+            Instruction::StoreFlags(Register(x)) => {
+                let x: usize = u8::from(x).into();
                 for n in 0..=x {
                     self.flags[n] = self.v[n];
                 }
             }
-            (0xF, _x, 0x8, 0x5) => {
+            Instruction::LoadFlags(Register(x)) => {
+                let x: usize = u8::from(x).into();
                 for n in 0..=x {
                     self.v[n] = self.flags[n];
                 }
             }
-            _ => return Err(format!("Unknown opcode {:#06x}", opcode)),
+            Instruction::SetIndexLong => self.i = self.fetch(),
+            _ => panic!("Unknown instruction {:?}", instruction),
         }
         Ok(())
     }
-
-    //pub fn execute(&mut self, _: Fn) {
-
-    //}
 
     /// Run the CHIP-8 CPU for the given number of ticks.
     ///
@@ -393,12 +475,12 @@ impl Chip8 {
             self.sound -= 1;
         }
         for _ in 0..tickrate {
-            //self.execute(self.decode(self.fetch()));
-            //let addr = self.pc;
+            let _addr = self.pc;
             let opcode = self.fetch();
-            //println!("{:02x}: {:04x}", addr, opcode);
-            self.decode(opcode)?;
-            if self.options.quirks.vblank == Some(true) && opcode >= 0xD000 && opcode <= 0xDFFF {
+            //dbg!(format!("{:02x}: {:04x}", _addr, opcode));
+            let instruction = self.decode(opcode)?;
+            self.execute(instruction)?;
+            if self.options.quirks.vblank == Some(true) && (0xD000..=0xDFFF).contains(&opcode) {
                 break;
             }
         }
@@ -406,8 +488,11 @@ impl Chip8 {
     }
 
     fn skip(&mut self) {
-        if self.fetch() == 0xF000 {
-            let _ = self.fetch();
+        let opcode = self.fetch();
+        if let Ok(instruction) = self.decode(opcode) {
+            if instruction == Instruction::SetIndexLong {
+                let _ = self.fetch();
+            }
         }
     }
 }

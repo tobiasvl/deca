@@ -21,6 +21,7 @@ pub struct Display {
 
 impl Display {
     /// Create a new CHIP-8 display.
+    #[must_use]
     pub fn new() -> Display {
         Display {
             display: [[0; 128]; 64],
